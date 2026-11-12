@@ -14,7 +14,9 @@ apps/gitops-api/overlays/staging/     auto-sync; digest promoted from dev via re
 apps/gitops-api/overlays/prod/        MANUAL sync; digest promoted from staging via reviewed PR
 argocd/projects/                      default (locked), platform, gitops-nonprod, gitops-prod
 argocd/applications/                  root (app-of-apps) + one Application per environment
-sealed-secrets/                       SealedSecret manifests only; never plaintext (phase 7)
+platform/sealed-secrets/              Sealed Secrets controller (vendored, digest-pinned), managed by Argo CD
+sealed-secrets/pub-cert.pem           PUBLIC sealing cert (seal offline with scripts/seal.sh)
+docs/SECRETS.md                       how to add, rotate, back up and restore secrets
 scripts/validate.sh                   offline gate: render + kubeconform + policy_check.py
 docs/PROMOTION.md                     promotion procedure (phase 9–12)
 ```
