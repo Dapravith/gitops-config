@@ -8,7 +8,7 @@
 #   1. only adjacent promotions: dev->staging, staging->prod
 #   2. working tree clean and on main
 #   3. <from>'s Argo CD Application is Synced + Healthy at the current main commit
-#   4. the digest Argo CD reports running in <from> equals the digest in Git
+#   4. <from> is fully rolled out and every running pod's imageID equals the digest in Git
 #   5. scripts/validate.sh passes with the change applied
 #
 # Output: branch promote/<to>-<digest12> with one commit. Review the diff, then
@@ -36,17 +36,32 @@ dst_digest="$(digest_of "${to}")"
 
 app="gitops-api-${from}"
 status="$(kubectl -n argocd get application "${app}" \
-  -o jsonpath='{.status.sync.status} {.status.health.status} {.status.sync.revision} {.status.summary.images}')" \
+  -o jsonpath='{.status.sync.status} {.status.health.status} {.status.sync.revision}')" \
   || { echo "gate: cannot read Argo CD Application ${app}" >&2; exit 1; }
 # here-string adds the trailing newline jsonpath omits (read would fail under set -e).
-read -r sync health rev images <<< "${status}"
+read -r sync health rev <<< "${status}"
 head_rev="$(git rev-parse HEAD)"
 [[ "${sync}" == "Synced" && "${health}" == "Healthy" ]] \
   || { echo "gate: ${app} is ${sync}/${health}, must be Synced/Healthy" >&2; exit 1; }
 [[ "${rev}" == "${head_rev}" ]] \
   || { echo "gate: ${app} is at ${rev:0:7}, main is ${head_rev:0:7}; wait for sync" >&2; exit 1; }
-[[ "${images}" == *"@${src_digest}"* ]] \
-  || { echo "gate: ${app} reports images ${images}, expected @${src_digest}" >&2; exit 1; }
+
+# What is ACTUALLY running: rollout complete and every pod resolved to the Git digest.
+ns="gitops-${from}"
+read -r want updated ready <<< "$(kubectl -n "${ns}" get deployment gitops-api \
+  -o jsonpath='{.spec.replicas} {.status.updatedReplicas} {.status.readyReplicas}')"
+[[ "${want}" == "${updated}" && "${want}" == "${ready}" ]] \
+  || { echo "gate: ${ns} rollout incomplete (want ${want}, updated ${updated:-0}, ready ${ready:-0})" >&2; exit 1; }
+# One line per pod: "<deletionTimestamp>|<imageID>". Terminating pods have a
+# timestamp before the bar and are ignored; the rest must match the Git digest.
+running="$(kubectl -n "${ns}" get pods -l app.kubernetes.io/name=gitops-api \
+  -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{.status.containerStatuses[0].imageID}{"\n"}{end}' \
+  | sed -n 's/^|//p')"
+[[ -n "${running}" ]] || { echo "gate: no running pods found in ${ns}" >&2; exit 1; }
+while IFS= read -r image_id; do
+  [[ "${image_id}" == *"@${src_digest}" ]] \
+    || { echo "gate: ${ns} runs ${image_id}, Git says @${src_digest}" >&2; exit 1; }
+done <<< "${running}"
 echo "gates passed: ${app} Synced/Healthy at ${rev:0:7}, running @${src_digest:7:12}"
 
 branch="promote/${to}-${src_digest:7:12}"
