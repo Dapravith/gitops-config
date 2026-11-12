@@ -6,6 +6,7 @@ namespace: gitops-dev
 resources:
   - namespace.yaml
   - ../../base
+  - sealedsecret-lab-demo-secret.yaml
 
 components:
   - ../../components/sealed-secrets-access
