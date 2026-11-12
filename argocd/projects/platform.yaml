@@ -8,6 +8,8 @@ metadata:
 spec:
   description: Argo CD configuration (AppProjects and Applications) managed from Git
   sourceRepos:
+    - https://github.com/Dapravith/gitops-config.git
+    # TRANSITION: remove the lab Git server once every Application reads GitHub.
     - http://git.lab-infra.svc.cluster.local/git/gitops-config.git
   destinations:
     - server: https://kubernetes.default.svc

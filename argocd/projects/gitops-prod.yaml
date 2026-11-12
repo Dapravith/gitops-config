@@ -7,6 +7,8 @@ metadata:
 spec:
   description: production for gitops-api (manual sync only; see argocd-rbac-cm for who may sync)
   sourceRepos:
+    - https://github.com/Dapravith/gitops-config.git
+    # TRANSITION: remove the lab Git server once every Application reads GitHub.
     - http://git.lab-infra.svc.cluster.local/git/gitops-config.git
   destinations:
     - server: https://kubernetes.default.svc

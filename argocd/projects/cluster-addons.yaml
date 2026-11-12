@@ -8,6 +8,8 @@ metadata:
 spec:
   description: Cluster add-ons with explicitly named cluster-scoped resources
   sourceRepos:
+    - https://github.com/Dapravith/gitops-config.git
+    # TRANSITION: remove the lab Git server once every Application reads GitHub.
     - http://git.lab-infra.svc.cluster.local/git/gitops-config.git
   destinations:
     - server: https://kubernetes.default.svc
