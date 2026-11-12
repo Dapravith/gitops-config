@@ -34,12 +34,16 @@ jobs:
           kubectl version --client
       - name: validate.sh
         run: scripts/validate.sh
-      - name: Promotion PRs change exactly one digest line
-        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'ci/') || startsWith(github.head_ref, 'promote/'))
+      # Runs for PRs AND for the image-updater's workflow_dispatch on its branch
+      # (GITHUB_TOKEN-made PRs get no pull_request run).
+      - name: Promotion branches change exactly one digest line
+        if: startsWith(github.head_ref || github.ref_name, 'ci/') || startsWith(github.head_ref || github.ref_name, 'promote/')
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          BASE="${PR_BASE:-$(git merge-base origin/main HEAD)}"
+          echo "comparing ${BASE:0:7}...HEAD"
           files="$(git diff --name-only "$BASE"...HEAD)"
           echo "$files"
           if [ "$(echo "$files" | wc -l)" -ne 1 ] \
