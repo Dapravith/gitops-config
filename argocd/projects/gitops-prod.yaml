@@ -12,9 +12,12 @@ spec:
     - server: https://kubernetes.default.svc
       namespace: gitops-prod
   # Only the kinds this app actually uses. Anything else fails the sync.
+  # Namespace is cluster-scoped: restrict it BY NAME, otherwise anyone who can
+  # merge could create arbitrary namespaces (found by the phase-13 probe).
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+      name: gitops-prod
   namespaceResourceWhitelist:
     - {group: "", kind: ConfigMap}
     - {group: "", kind: Service}
