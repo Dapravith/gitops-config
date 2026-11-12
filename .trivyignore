@@ -1,0 +1,13 @@
+# Accepted Trivy misconfiguration findings. Each needs a reason; review when Trivy is bumped.
+
+# False positive: flags the ConfigMap key "PORT" (value 8080) as sensitive content.
+# The ConfigMap holds only APP_ENV, LOG_FORMAT, PORT, RUST_LOG. Secrets go in SealedSecrets.
+KSV-01010
+
+# ghcr.io is this project's registry; Trivy's built-in trusted list does not include it.
+# Images are additionally pinned by sha256 digest (enforced by scripts/policy_check.py).
+KSV-0125
+
+# Deliberate: CPU requests are set, CPU limits are not, to avoid CFS throttling of a
+# latency-sensitive HTTP service. Memory limits ARE set (enforced by policy_check.py).
+KSV-0011

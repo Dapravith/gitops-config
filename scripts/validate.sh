@@ -3,6 +3,8 @@
 #   1. render with Kustomize (kubectl's built-in)
 #   2. schema-validate with kubeconform (strict, K8s 1.36 schemas)
 #   3. enforce project policy (scripts/policy_check.py)
+#   4. misconfiguration scan (trivy config, exceptions in .trivyignore)
+#   5. schema + guard rails for argocd/ Applications and AppProjects
 # Tools other than kubectl/python3/docker run as digest-pinned containers.
 # Rendered output is written to ${OUT_DIR:-.rendered}/<env>.yaml (gitignored).
 set -euo pipefail
@@ -14,6 +16,7 @@ read -r -a envs <<< "${envs[*]}"
 
 KUBECONFORM_IMAGE="ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e"
 YQ_IMAGE="mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e"
+TRIVY_IMAGE="aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
 K8S_VERSION="1.36.0"
 # CRD JSON schemas (Argo CD Application/AppProject), pinned to a catalog commit.
 CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/89c736bdde38b5fecd0f8436ec5f3aa3679a3b86/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
@@ -40,6 +43,15 @@ for env in "${envs[@]}"; do
     fail=1
   fi
 done
+
+echo "== misconfiguration scan (trivy config; exceptions in .trivyignore)"
+if docker run --rm -v "${out}:/m:ro" -v "${root}/.trivyignore:/.trivyignore:ro" \
+      -v gitops-trivy-cache:/root/.cache/trivy "${TRIVY_IMAGE}" \
+      config --quiet --ignorefile /.trivyignore --exit-code 1 /m > "${out}/trivy.txt" 2>&1; then
+  echo "  trivy config OK"
+else
+  sed 's/^/  /' "${out}/trivy.txt" | tail -30; echo "  MISCONFIG FAIL"; fail=1
+fi
 
 echo "== argocd/ (AppProjects + Applications)"
 if ! docker run --rm -v "${root}/argocd:/argocd:ro" "${KUBECONFORM_IMAGE}" \
