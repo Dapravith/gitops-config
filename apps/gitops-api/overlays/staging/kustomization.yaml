@@ -30,7 +30,7 @@ configMapGenerator:
 images:
   - name: gitops-api
     newName: ghcr.io/dapravith/gitops-api
-    digest: sha256:de04de911d746bd9a3388b7f450931febe819e8c8ca723d660a67052f0af2482
+    digest: sha256:4bfc7038e9ecfb9503c113d039dc14be0e4cd60e6a8ef11b2984c60059fbea8f
 
 patches:
   - path: deployment-patch.yaml
