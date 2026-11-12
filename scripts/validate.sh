@@ -5,6 +5,7 @@
 #   3. enforce project policy (scripts/policy_check.py)
 #   4. misconfiguration scan (trivy config, exceptions in .trivyignore)
 #   5. schema + guard rails for argocd/ Applications and AppProjects
+#   6. secret scan of the working tree and full git history (gitleaks)
 # Tools other than kubectl/python3/docker run as digest-pinned containers.
 # Rendered output is written to ${OUT_DIR:-.rendered}/<env>.yaml (gitignored).
 set -euo pipefail
@@ -16,6 +17,7 @@ read -r -a envs <<< "${envs[*]}"
 
 KUBECONFORM_IMAGE="ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e"
 YQ_IMAGE="mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e"
+GITLEAKS_IMAGE="ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
 TRIVY_IMAGE="aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
 K8S_VERSION="1.36.0"
 # CRD JSON schemas (Argo CD Application/AppProject), pinned to a catalog commit.
@@ -87,6 +89,17 @@ for e in dev staging; do
     || { echo "  POLICY FAIL [argocd] gitops-api-${e} must auto-sync with selfHeal"; fail=1; }
 done
 [[ ${fail} -eq 0 ]] && echo "  argocd policy OK"
+
+echo "== secret scan (gitleaks: working tree + git history)"
+leaks=0
+docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" dir /repo --no-banner --redact --verbose --no-color \
+  > "${out}/gitleaks-dir.txt" 2>&1 || leaks=1
+if [[ -d "${root}/.git" ]]; then
+  docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" git /repo --no-banner --redact --verbose --no-color \
+    > "${out}/gitleaks-git.txt" 2>&1 || leaks=1
+fi
+if [[ ${leaks} -eq 0 ]]; then echo "  no leaks found"; else
+  grep -hE 'RuleID:|File:|Commit:|leaks found' "${out}"/gitleaks-*.txt | sed 's/^/  /' | head -20; echo "  SECRET SCAN FAIL"; fail=1; fi
 
 if [[ ${fail} -ne 0 ]]; then echo "VALIDATION FAILED"; exit 1; fi
 echo "ALL OVERLAYS VALID"
