@@ -5,13 +5,15 @@ applies this repo to the cluster.** Nobody runs `kubectl apply` by hand.
 
 ```
 bootstrap/kind/                       local cluster: kind-config.yaml + create-cluster.sh (phase 5)
+bootstrap/git-server/                 read-only smart-HTTP Git server Argo CD pulls from (lab only)
+bootstrap/argocd/                     one-time Argo CD v3.5.7 install (checksum + digest pinned)
 apps/gitops-api/base/                 shared manifests: Deployment, Service, SA, NetworkPolicies, ConfigMap
 apps/gitops-api/components/pdb/       PodDisruptionBudget, used by staging + prod
 apps/gitops-api/overlays/dev/         auto-sync; image digest bumped by CI PR
 apps/gitops-api/overlays/staging/     auto-sync; digest promoted from dev via reviewed PR
 apps/gitops-api/overlays/prod/        MANUAL sync; digest promoted from staging via reviewed PR
-argocd/projects/                      AppProject restricting sources/destinations (phase 7)
-argocd/applications/                  one Application per environment (phase 7)
+argocd/projects/                      default (locked), platform, gitops-nonprod, gitops-prod
+argocd/applications/                  root (app-of-apps) + one Application per environment
 sealed-secrets/                       SealedSecret manifests only; never plaintext (phase 7)
 scripts/validate.sh                   offline gate: render + kubeconform + policy_check.py
 docs/PROMOTION.md                     promotion procedure (phase 9–12)
@@ -41,3 +43,23 @@ mirror for `ghcr.io`, so overlays can pin GHCR digests before CI has published.
 ```bash
 scripts/validate.sh
 ```
+
+## Bring up the whole lab from scratch
+
+```bash
+bootstrap/kind/create-cluster.sh
+```
+
+```bash
+bootstrap/git-server/start.sh
+```
+
+```bash
+bootstrap/argocd/install.sh
+```
+
+```bash
+scripts/argocd.sh app list
+```
+
+Publishing a change = commit, then `git push lab main`. Argo CD picks it up within about 60 s.

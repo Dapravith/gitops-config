@@ -3,8 +3,9 @@ kind: Namespace
 metadata:
   name: argocd
   labels:
-    # Upstream Argo CD pods meet `baseline`; warn on anything short of `restricted`.
-    pod-security.kubernetes.io/enforce: baseline
+    # Verified: `kubectl label --dry-run=server ... enforce=restricted` reports no
+    # violations for any Argo CD v3.5.7 pod, so enforce the strictest profile.
+    pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: v1.36
     pod-security.kubernetes.io/warn: restricted
     pod-security.kubernetes.io/audit: restricted
