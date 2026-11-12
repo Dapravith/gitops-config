@@ -92,10 +92,10 @@ done
 
 echo "== secret scan (gitleaks: working tree + git history)"
 leaks=0
-docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" dir /repo --no-banner --redact --verbose --no-color \
+docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" dir /repo --config /repo/.gitleaks.toml --no-banner --redact --verbose --no-color \
   > "${out}/gitleaks-dir.txt" 2>&1 || leaks=1
 if [[ -d "${root}/.git" ]]; then
-  docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" git /repo --no-banner --redact --verbose --no-color \
+  docker run --rm -v "${root}:/repo:ro" "${GITLEAKS_IMAGE}" git /repo --config /repo/.gitleaks.toml --no-banner --redact --verbose --no-color \
     > "${out}/gitleaks-git.txt" 2>&1 || leaks=1
 fi
 if [[ ${leaks} -eq 0 ]]; then echo "  no leaks found"; else
