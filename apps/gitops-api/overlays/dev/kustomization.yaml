@@ -18,6 +18,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - APP_ENV=dev
+      - PORT=0
       - RUST_LOG=info,gitops_api=debug
 
 # --- Image: the ONLY field promotion changes. -------------------------------
