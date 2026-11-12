@@ -1,0 +1,29 @@
+# dev and staging for gitops-api
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: gitops-nonprod
+  namespace: argocd
+spec:
+  description: dev and staging for gitops-api
+  sourceRepos:
+    - http://git.lab-infra.svc.cluster.local/git/gitops-config.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: gitops-dev
+    - server: https://kubernetes.default.svc
+      namespace: gitops-staging
+  # Only the kinds this app actually uses. Anything else fails the sync.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - {group: "", kind: ConfigMap}
+    - {group: "", kind: Service}
+    - {group: "", kind: ServiceAccount}
+    - {group: apps, kind: Deployment}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: bitnami.com, kind: SealedSecret}
+  orphanedResources:
+    warn: true

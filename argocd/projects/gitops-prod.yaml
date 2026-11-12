@@ -1,0 +1,27 @@
+# production for gitops-api (manual sync only; see argocd-rbac-cm for who may sync)
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: gitops-prod
+  namespace: argocd
+spec:
+  description: production for gitops-api (manual sync only; see argocd-rbac-cm for who may sync)
+  sourceRepos:
+    - http://git.lab-infra.svc.cluster.local/git/gitops-config.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: gitops-prod
+  # Only the kinds this app actually uses. Anything else fails the sync.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - {group: "", kind: ConfigMap}
+    - {group: "", kind: Service}
+    - {group: "", kind: ServiceAccount}
+    - {group: apps, kind: Deployment}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: bitnami.com, kind: SealedSecret}
+  orphanedResources:
+    warn: true

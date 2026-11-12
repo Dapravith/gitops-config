@@ -15,6 +15,8 @@ read -r -a envs <<< "${envs[*]}"
 KUBECONFORM_IMAGE="ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e"
 YQ_IMAGE="mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e"
 K8S_VERSION="1.36.0"
+# CRD JSON schemas (Argo CD Application/AppProject), pinned to a catalog commit.
+CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/89c736bdde38b5fecd0f8436ec5f3aa3679a3b86/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
 mkdir -p "${out}"
 fail=0
@@ -38,6 +40,26 @@ for env in "${envs[@]}"; do
     fail=1
   fi
 done
+
+echo "== argocd/ (AppProjects + Applications)"
+if ! docker run --rm -v "${root}/argocd:/argocd:ro" "${KUBECONFORM_IMAGE}" \
+      -strict -summary -kubernetes-version "${K8S_VERSION}" \
+      -schema-location default -schema-location "${CRD_SCHEMAS}" /argocd | sed 's/^/  /'; then
+  echo "  SCHEMA FAIL [argocd]"; fail=1
+fi
+# Guard rails on the Application objects themselves.
+prod_app="${root}/argocd/applications/gitops-api-prod.yaml"
+if grep -qE '^\s+automated:' "${prod_app}"; then
+  echo "  POLICY FAIL [argocd] gitops-api-prod must NOT have automated sync"; fail=1
+fi
+if grep -q 'resources-finalizer' "${prod_app}"; then
+  echo "  POLICY FAIL [argocd] gitops-api-prod must not cascade-delete (no resources finalizer)"; fail=1
+fi
+for e in dev staging; do
+  grep -qE '^\s+selfHeal: true' "${root}/argocd/applications/gitops-api-${e}.yaml" \
+    || { echo "  POLICY FAIL [argocd] gitops-api-${e} must auto-sync with selfHeal"; fail=1; }
+done
+[[ ${fail} -eq 0 ]] && echo "  argocd policy OK"
 
 if [[ ${fail} -ne 0 ]]; then echo "VALIDATION FAILED"; exit 1; fi
 echo "ALL OVERLAYS VALID"
