@@ -13,7 +13,7 @@ namespace: sealed-secrets
 resources:
   - namespace.yaml
   - upstream/controller-v0.41.2.yaml
-  - namespace-reader.yaml
+  - rbac.yaml
 
 images:
   - name: docker.io/bitnami/sealed-secrets-controller
