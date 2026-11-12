@@ -8,7 +8,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: http://git.lab-infra.svc.cluster.local/git/gitops-config.git
+    repoURL: https://github.com/Dapravith/gitops-config.git
     targetRevision: main
     path: argocd
     directory:
