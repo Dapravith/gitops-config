@@ -26,6 +26,23 @@ def pod_specs(obj: dict):
         yield obj["spec"]
 
 
+def check_app_config(env: str, ref: str, data: dict) -> list[str]:
+    """Mirror gitops-api's own config validation (src/config.rs) so a value the
+    app would reject at startup fails here, before merge, instead of crash-looping
+    in the cluster (found in phase 13 with PORT=0)."""
+    errs: list[str] = []
+    port = data.get("PORT", "8080")
+    if not (port.isdigit() and 1 <= int(port) <= 65535):
+        errs.append(f"{ref}: PORT must be an integer 1-65535, got {port!r}")
+    app_env = data.get("APP_ENV")
+    if app_env != env:
+        errs.append(f"{ref}: APP_ENV must be {env!r} in the {env} overlay, got {app_env!r}")
+    log_format = data.get("LOG_FORMAT", "json").strip().lower()
+    if log_format not in {"json", "pretty", "text"}:
+        errs.append(f"{ref}: LOG_FORMAT must be json or pretty, got {data.get('LOG_FORMAT')!r}")
+    return errs
+
+
 def check(env: str, objs: list[dict]) -> list[str]:
     errs: list[str] = []
     ns = EXPECTED_NS[env]
@@ -34,6 +51,9 @@ def check(env: str, objs: list[dict]) -> list[str]:
     for o in objs:
         kind, name = o["kind"], o["metadata"]["name"]
         ref = f"{kind}/{name}"
+
+        if kind == "ConfigMap" and name.startswith("gitops-api-config"):
+            errs.extend(check_app_config(env, ref, o.get("data", {})))
 
         if kind in FORBIDDEN_KINDS:
             errs.append(f"{ref}: plaintext {kind} must not be committed (use SealedSecret)")
