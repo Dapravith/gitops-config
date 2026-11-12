@@ -35,8 +35,11 @@ dst_digest="$(digest_of "${to}")"
 [[ "${src_digest}" != "${dst_digest}" ]] || { echo "${to} already runs ${src_digest}; nothing to promote"; exit 0; }
 
 app="gitops-api-${from}"
-read -r sync health rev images < <(kubectl -n argocd get application "${app}" \
-  -o jsonpath='{.status.sync.status} {.status.health.status} {.status.sync.revision} {.status.summary.images}')
+status="$(kubectl -n argocd get application "${app}" \
+  -o jsonpath='{.status.sync.status} {.status.health.status} {.status.sync.revision} {.status.summary.images}')" \
+  || { echo "gate: cannot read Argo CD Application ${app}" >&2; exit 1; }
+# here-string adds the trailing newline jsonpath omits (read would fail under set -e).
+read -r sync health rev images <<< "${status}"
 head_rev="$(git rev-parse HEAD)"
 [[ "${sync}" == "Synced" && "${health}" == "Healthy" ]] \
   || { echo "gate: ${app} is ${sync}/${health}, must be Synced/Healthy" >&2; exit 1; }
