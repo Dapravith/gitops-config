@@ -7,6 +7,9 @@ resources:
   - namespace.yaml
   - ../../base
 
+components:
+  - ../../components/sealed-secrets-access
+
 labels:
   - pairs:
       app.kubernetes.io/environment: dev

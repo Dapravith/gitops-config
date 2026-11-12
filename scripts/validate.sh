@@ -33,7 +33,7 @@ for env in "${envs[@]}"; do
 
   if ! docker run --rm -i "${KUBECONFORM_IMAGE}" \
         -strict -summary -kubernetes-version "${K8S_VERSION}" \
-        -schema-location default - < "${file}" | sed 's/^/  /'; then
+        -schema-location default -schema-location "${CRD_SCHEMAS}" - < "${file}" | sed 's/^/  /'; then
     echo "  SCHEMA FAIL [${env}]"; fail=1
   fi
 
@@ -43,6 +43,21 @@ for env in "${envs[@]}"; do
     fail=1
   fi
 done
+
+echo "== platform/sealed-secrets"
+if kubectl kustomize "${root}/platform/sealed-secrets" > "${out}/sealed-secrets.yaml"; then
+  # kubeconform has no JSON schema for CustomResourceDefinition itself; skip it.
+  if ! docker run --rm -i "${KUBECONFORM_IMAGE}" -strict -summary -kubernetes-version "${K8S_VERSION}" \
+        -skip CustomResourceDefinition -schema-location default - < "${out}/sealed-secrets.yaml" | sed 's/^/  /'; then
+    echo "  SCHEMA FAIL [sealed-secrets]"; fail=1
+  fi
+  want="5973b18ef77ae91e464bac62542a12c48844a08da69d80e45a8fc7f0d67fe205"
+  got="$(shasum -a 256 "${root}/platform/sealed-secrets/upstream/controller-v0.41.2.yaml" | awk '{print $1}')"
+  [[ "${got}" == "${want}" ]] && echo "  vendored upstream sha256 OK" \
+    || { echo "  INTEGRITY FAIL: vendored controller.yaml sha256 ${got}"; fail=1; }
+else
+  echo "  RENDER FAIL [sealed-secrets]"; fail=1
+fi
 
 echo "== misconfiguration scan (trivy config; exceptions in .trivyignore)"
 if docker run --rm -v "${out}:/m:ro" -v "${root}/.trivyignore:/.trivyignore:ro" \

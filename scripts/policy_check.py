@@ -43,6 +43,46 @@ def check_app_config(env: str, ref: str, data: dict) -> list[str]:
     return errs
 
 
+def is_sealed_secrets_binding(o: dict) -> bool:
+    return (
+        o["metadata"]["name"] == "sealed-secrets-controller"
+        and o.get("roleRef") == {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "ClusterRole",
+            "name": "secrets-unsealer",
+        }
+        and o.get("subjects") == [{
+            "kind": "ServiceAccount",
+            "name": "sealed-secrets-controller",
+            "namespace": "sealed-secrets",
+        }]
+    )
+
+
+SEALED_VALUE_RE = re.compile(r"^[A-Za-z0-9+/]{100,}={0,2}$")
+
+
+def check_sealed_secret(ref: str, o: dict) -> list[str]:
+    errs: list[str] = []
+    annotations = o["metadata"].get("annotations") or {}
+    # Strict scope only: the ciphertext is bound to this name AND namespace.
+    for key in ("sealedsecrets.bitnami.com/cluster-wide", "sealedsecrets.bitnami.com/namespace-wide"):
+        if annotations.get(key) == "true":
+            errs.append(f"{ref}: {key} weakens scope; use the default strict scope")
+    spec = o.get("spec", {})
+    encrypted = spec.get("encryptedData") or {}
+    if not encrypted:
+        errs.append(f"{ref}: spec.encryptedData is empty")
+    for key, value in encrypted.items():
+        if not SEALED_VALUE_RE.match(str(value)):
+            errs.append(f"{ref}: encryptedData[{key!r}] does not look like kubeseal ciphertext")
+    template = spec.get("template") or {}
+    for field in ("data", "stringData"):
+        if template.get(field):
+            errs.append(f"{ref}: spec.template.{field} would commit plaintext")
+    return errs
+
+
 def check(env: str, objs: list[dict]) -> list[str]:
     errs: list[str] = []
     ns = EXPECTED_NS[env]
@@ -54,6 +94,15 @@ def check(env: str, objs: list[dict]) -> list[str]:
 
         if kind == "ConfigMap" and name.startswith("gitops-api-config"):
             errs.extend(check_app_config(env, ref, o.get("data", {})))
+
+        if kind == "SealedSecret":
+            errs.extend(check_sealed_secret(ref, o))
+
+        # AppProjects cannot pin namespaced kinds by name, so the ONLY RBAC object
+        # an overlay may contain is the Sealed Secrets access binding.
+        if o.get("apiVersion", "").startswith("rbac.authorization.k8s.io/"):
+            if kind != "RoleBinding" or not is_sealed_secrets_binding(o):
+                errs.append(f"{ref}: only components/sealed-secrets-access may add RBAC to an overlay")
 
         if kind in FORBIDDEN_KINDS:
             errs.append(f"{ref}: plaintext {kind} must not be committed (use SealedSecret)")

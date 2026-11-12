@@ -31,5 +31,8 @@ spec:
     - {group: networking.k8s.io, kind: NetworkPolicy}
     - {group: policy, kind: PodDisruptionBudget}
     - {group: bitnami.com, kind: SealedSecret}
+    # Only for components/sealed-secrets-access. AppProjects cannot pin namespaced
+    # kinds by name, so scripts/policy_check.py allows exactly that one RoleBinding.
+    - {group: rbac.authorization.k8s.io, kind: RoleBinding}
   orphanedResources:
     warn: true
