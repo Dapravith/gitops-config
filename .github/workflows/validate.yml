@@ -34,8 +34,8 @@ jobs:
           kubectl version --client
       - name: validate.sh
         run: scripts/validate.sh
-      # Runs for PRs AND for the image-updater's workflow_dispatch on its branch
-      # (GITHUB_TOKEN-made PRs get no pull_request run).
+      # Runs for every PR from a promotion branch (the image-updater's App-made
+      # PRs trigger pull_request like any other) and for manual dispatches.
       - name: Promotion branches change exactly one digest line
         if: startsWith(github.head_ref || github.ref_name, 'ci/') || startsWith(github.head_ref || github.ref_name, 'promote/')
         env:
