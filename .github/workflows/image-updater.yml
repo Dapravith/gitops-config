@@ -1,7 +1,8 @@
 # Pull-based image updater: proposes new gitops-api images to dev WITHOUT any
 # cross-repo credential. gitops-api's CI never writes here; this repository
 # pulls public facts (latest commit, CI result, GHCR digest, signed provenance)
-# and opens the PR with its own short-lived GITHUB_TOKEN.
+# and opens the PR as a GitHub App (SEC-011): a token minted per run, scoped to
+# this repository only, with contents + pull-requests write and nothing else.
 #
 # Trust chain before a digest is proposed:
 #   1. commit = tip of Dapravith/gitops-api main
@@ -10,9 +11,12 @@
 #   4. the digest carries a Sigstore build-provenance attestation signed by
 #      gitops-api's ci.yml on refs/heads/main, FOR THAT SAME COMMIT
 #
-# GitHub does not start workflows for pushes/PRs made with GITHUB_TOKEN, so the
-# required `validate` check is started explicitly via workflow_dispatch on the
-# branch (an allowed exception); it reports on the branch head commit.
+# Because the PR is made with an App token (not GITHUB_TOKEN), GitHub starts the
+# required `validate` check on `pull_request` by itself; no dispatch needed.
+#
+# Setup (once): docs/governance/README.md section 3 in the umbrella repo.
+#   vars.IMAGE_UPDATER_CLIENT_ID    the App's Client ID
+#   secrets.IMAGE_UPDATER_APP_KEY   the App's private key (.pem)
 name: image-updater
 
 on:
@@ -36,12 +40,13 @@ jobs:
   propose-dev:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # GITHUB_TOKEN only reads. Every write goes through the App token below.
     permissions:
-      contents: write        # push ci/dev-* branches (main is protected by the ruleset)
-      pull-requests: write   # open the PR, enable auto-merge
-      actions: write         # dispatch validate.yml on the branch
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Find the newest verified image
         id: find
@@ -78,10 +83,33 @@ jobs:
             echo "digest=${digest}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check App credentials are configured
+        if: steps.find.outputs.ready == 'true'
+        env:
+          CLIENT_ID: ${{ vars.IMAGE_UPDATER_CLIENT_ID }}
+          HAS_KEY: ${{ secrets.IMAGE_UPDATER_APP_KEY != '' }}
+        run: |
+          if [ -z "${CLIENT_ID}" ] || [ "${HAS_KEY}" != "true" ]; then
+            echo "::error::GitHub App not configured: set vars.IMAGE_UPDATER_CLIENT_ID and secrets.IMAGE_UPDATER_APP_KEY (see docs/governance/README.md section 3). Refusing to fall back to GITHUB_TOKEN."
+            exit 1
+          fi
+
+      - name: Mint App token (gitops-config only)
+        if: steps.find.outputs.ready == 'true'
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.IMAGE_UPDATER_CLIENT_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_KEY }}
+          repositories: gitops-config
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open dev promotion PR
         if: steps.find.outputs.ready == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
           SHA: ${{ steps.find.outputs.sha }}
           DIGEST: ${{ steps.find.outputs.digest }}
           IMAGE_REGISTRY: ghcr.io
@@ -94,8 +122,12 @@ jobs:
             echo "PR for ${branch} already open"; exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Commit and push as the App's bot user, authenticated by the App token.
+          bot="${APP_SLUG}[bot]"
+          bot_id="$(gh api "users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config user.name "${bot}"
+          git config user.email "${bot_id}+${bot}@users.noreply.github.com"
+          gh auth setup-git
           git switch -c "${branch}"
           scripts/set-image.sh dev "${DIGEST}"
           git commit -am "ci(dev): gitops-api@${DIGEST:0:19} built from gitops-api@${SHA:0:7}
@@ -121,8 +153,6 @@ jobs:
           - Provenance: Sigstore attestation verified (signer \`${SIGNER_WORKFLOW}@refs/heads/main\`, commit \`${SHA:0:7}\`)
           - Changes only \`apps/gitops-api/overlays/dev\`. Merges automatically once \`validate\` passes.")"
 
-          # Required check: GITHUB_TOKEN pushes don't trigger workflows, so start it explicitly.
-          gh workflow run validate.yml --ref "${branch}"
           # dev is the only environment that merges without a human.
           gh pr merge "${url}" --auto --merge
           echo "Opened ${url}" | tee -a "$GITHUB_STEP_SUMMARY"
